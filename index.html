@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Find Waldo!</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Boogaloo&family=DM+Sans:wght@400;600&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ground:   #0D1B2A;
+  --surface:  #13243A;
+  --text:     #FFFEF2;
+  --muted:    rgba(255,254,242,0.45);
+  --accent:   #E8192C;
+  --blue:     #1A56DB;
+  --yellow:   #F5C518;
+  --border:   rgba(255,254,242,0.10);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+}
+
+/* ── HUD ── */
+.hud {
+  position: relative;
+  z-index: 10;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--ground);
+  border-bottom: 2px solid var(--accent);
+  /* endpaper dot pattern — the chrome belongs to the world */
+  background-image:
+    radial-gradient(circle, rgba(232,25,44,.13) 1px, transparent 1px),
+    radial-gradient(circle, rgba(26,86,219,.09) 1px, transparent 1px);
+  background-size: 22px 22px, 33px 33px;
+  background-position: 0 0, 11px 11px;
+}
+
+.hud-logo {
+  font-family: 'Boogaloo', cursive;
+  font-size: 26px;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  line-height: 1;
+}
+.hud-logo em { font-style: normal; color: var(--accent); }
+
+.hud-sep { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
+.hud-spacer { flex: 1; }
+
+.hud-stat { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.hud-stat-label {
+  font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.hud-stat-val {
+  font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; line-height: 1;
+}
+#timer { color: var(--yellow); }
+#miss-indicator { font-size: 12px; font-weight: 600; color: var(--accent); min-width: 56px; height: 16px; }
+
+.btn {
+  font-family: 'Boogaloo', cursive;
+  font-size: 15px; letter-spacing: .04em;
+  padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer;
+  transition: transform .1s, opacity .15s;
+  line-height: 1;
+}
+.btn:hover { opacity: .88; }
+.btn:active { transform: scale(.95); }
+.btn-red   { background: var(--accent); color: var(--text); }
+.btn-ghost { background: transparent; color: var(--muted); border: 1.5px solid var(--border); }
+.btn-ghost:hover { color: var(--text); border-color: rgba(255,254,242,.3); }
+.btn.hidden { display: none !important; }
+
+/* ── GAME AREA ── */
+.game-area {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 60px);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#game-canvas {
+  display: block;
+  height: 100%;
+  width: auto;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='white' stroke-width='2.2'/%3E%3Cline x1='19' y1='19' x2='26' y2='26' stroke='white' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E") 14 14, crosshair;
+}
+
+/* ── START SCREEN ── */
+.start-screen {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--ground);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 0;
+}
+.start-screen.hidden { display: none; }
+
+.start-title {
+  font-family: 'Boogaloo', cursive;
+  font-size: clamp(52px, 9vw, 100px);
+  line-height: .95;
+  margin-bottom: 14px;
+  text-align: center;
+}
+.start-title em { font-style: normal; color: var(--accent); }
+
+.start-sub {
+  font-size: 16px; color: var(--muted); text-align: center;
+  max-width: 340px; line-height: 1.5; margin-bottom: 36px;
+}
+
+.start-preview-wrap {
+  position: relative;
+  width: 100px; height: 130px;
+  margin-bottom: 36px;
+}
+#preview-canvas { display: block; }
+
+.start-preview-label {
+  position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+  font-family: 'Boogaloo', cursive; font-size: 13px;
+  color: var(--accent); white-space: nowrap;
+  animation: blink-label 1.4s ease-in-out infinite;
+}
+@keyframes blink-label { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── SUCCESS OVERLAY ── */
+.overlay {
+  position: fixed; inset: 0; z-index: 150;
+  background: rgba(13,27,42,.85);
+  backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+}
+.overlay.hidden { display: none; }
+
+.overlay-card {
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 18px;
+  padding: 44px 52px;
+  text-align: center;
+  max-width: 420px; width: 90%;
+  animation: pop 0.38s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes pop { from{transform:scale(.65);opacity:0} to{transform:scale(1);opacity:1} }
+
+.overlay-title {
+  font-family: 'Boogaloo', cursive;
+  font-size: 46px; line-height: 1;
+  margin-bottom: 6px;
+}
+.overlay-title em { font-style: normal; color: var(--accent); }
+
+.overlay-sub { font-size: 13px; color: var(--muted); margin-bottom: 30px; }
+
+.overlay-stats {
+  display: flex; gap: 36px; justify-content: center; margin-bottom: 30px;
+}
+.ov-stat { display: flex; flex-direction: column; gap: 3px; }
+.ov-stat-n {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 40px; font-weight: 700; color: var(--yellow); line-height: 1;
+}
+.ov-stat-l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+.overlay-btns { display: flex; gap: 10px; justify-content: center; }
+.overlay-btns .btn { font-size: 17px; padding: 12px 26px; }
+
+/* ── LEVEL BADGE ── */
+.level-badge {
+  position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
+  z-index: 100;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-family: 'Boogaloo', cursive; font-size: 16px;
+  letter-spacing: .05em;
+  color: var(--muted);
+  pointer-events: none;
+  opacity: 0; transition: opacity .3s;
+}
+.level-badge.show { opacity: 1; }
+.level-badge strong { color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-card { animation: none; }
+  .start-preview-label { animation: none; }
+}
+@media (max-width: 600px) {
+  .hud { padding: 0 10px; gap: 10px; }
+  .hud-logo { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div class="start-screen" id="start-screen">
+  <h1 class="start-title">Find <em>Waldo!</em></h1>
+  <p class="start-sub">He's somewhere in that crowd. Sharp eyes, fast click — the clock is watching.</p>
+  <div class="start-preview-wrap">
+    <canvas id="preview-canvas" width="100" height="130"></canvas>
+    <span class="start-preview-label">← that's him</span>
+  </div>
+  <button class="btn btn-red" id="start-btn" style="font-size:20px;padding:13px 40px;">Start Searching</button>
+</div>
+
+<!-- HUD -->
+<header class="hud">
+  <span class="hud-logo">Find <em>Waldo</em></span>
+  <div class="hud-sep"></div>
+  <div class="hud-stat">
+    <span class="hud-stat-label">Level</span>
+    <span class="hud-stat-val" id="level-val">1 / 3</span>
+  </div>
+  <div class="hud-sep"></div>
+  <div class="hud-stat">
+    <span class="hud-stat-label">Time</span>
+    <span class="hud-stat-val" id="timer">00:00</span>
+  </div>
+  <div class="hud-spacer"></div>
+  <span id="miss-indicator"></span>
+  <button class="btn btn-ghost hidden" id="hint-btn">Hint</button>
+  <button class="btn btn-ghost" id="restart-btn">New Game</button>
+</header>
+
+<!-- LEVEL BADGE -->
+<div class="level-badge" id="level-badge">Level <strong id="badge-num">1</strong></div>
+
+<!-- GAME AREA -->
+<div class="game-area" id="game-area">
+  <canvas id="game-canvas"></canvas>
+</div>
+
+<!-- SUCCESS OVERLAY -->
+<div class="overlay hidden" id="success-overlay">
+  <div class="overlay-card">
+    <div class="overlay-title" id="ov-title">You found <em>Waldo!</em></div>
+    <div class="overlay-sub" id="ov-sub">Level 1 complete</div>
+    <div class="overlay-stats">
+      <div class="ov-stat">
+        <span class="ov-stat-n" id="ov-time">0.0</span>
+        <span class="ov-stat-l">seconds</span>
+      </div>
+      <div class="ov-stat">
+        <span class="ov-stat-n" id="ov-clicks">0</span>
+        <span class="ov-stat-l">clicks</span>
+      </div>
+    </div>
+    <div class="overlay-btns">
+      <button class="btn btn-ghost" id="ov-restart">Restart</button>
+      <button class="btn btn-red"   id="ov-next">Next Level →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CANVAS + CONSTANTS
+// ═══════════════════════════════════════════════
+const CW = 1900, CH = 920;
+const canvas = document.getElementById('game-canvas');
+const ctx    = canvas.getContext('2d');
+canvas.width  = CW;
+canvas.height = CH;
+
+// Polyfill roundRect for older browsers
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    const rad = typeof r === 'number' ? r : (Array.isArray(r) ? r[0] : 0);
+    this.beginPath();
+    this.moveTo(x + rad, y);
+    this.lineTo(x + w - rad, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + rad);
+    this.lineTo(x + w, y + h - rad);
+    this.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+    this.lineTo(x + rad, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - rad);
+    this.lineTo(x, y + rad);
+    this.quadraticCurveTo(x, y, x + rad, y);
+    this.closePath();
+    return this;
+  };
+}
+
+const SKIN  = ['#FFDBB4','#F1C27D','#E0AC69','#C68642','#A0522D','#8D5524','#FFCBA4'];
+const HAIR  = ['#1C1C1C','#5C3317','#A0522D','#FFD700','#8B4513','#CC9900','#8B0000'];
+const SHIRTS= ['#3498DB','#2ECC71','#E67E22','#9B59B6','#1ABC9C','#BDC3C7','#E91E63','#00BCD4','#FF7043','#26A69A','#AB47BC','#EF5350'];
+const PANTS = ['#1C2951','#8B6914','#2D5A27','#4A148C','#BF360C','#37474F','#5D4037','#263238'];
+const HATCOL= ['#3498DB','#2ECC71','#F39C12','#9B59B6','#BDC3C7','#E74C3C','#FFFFFF','#FF7043'];
+
+// ═══════════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════════
+const S = { level:1, found:false, clicks:0, startMs:0, timerInt:null, missTimer:null };
+let chars=[], waldo=null, ripples=[], confetti=[], raf=null;
+let hintAlpha=0, hintPulse=0;
+
+function rand()  { return Math.random(); }
+function pick(a) { return a[Math.floor(rand()*a.length)]; }
+function rng(lo,hi){ return lo + rand()*(hi-lo); }
+
+// ═══════════════════════════════════════════════
+// CHARACTER DRAWING  (works on any 2d context)
+// ═══════════════════════════════════════════════
+function drawChar(c2d, p) {
+  const {x, y, scale:s, isWaldo} = p;
+
+  // Proportions at scale=1
+  const legH=26*s, legW=7*s;
+  const bH=22*s,   bW=16*s;
+  const hR=10*s,   armH=15*s, armW=4.5*s;
+  const fY=y, wY=y-legH, shY=wY-bH, hY=shY-hR-1*s;
+
+  c2d.save();
+
+  // ── LEGS ──
+  c2d.fillStyle = p.pantsColor;
+  c2d.beginPath(); c2d.roundRect(x-legW-1*s, wY, legW, legH, 3*s); c2d.fill();
+  c2d.beginPath(); c2d.roundRect(x+1*s,      wY, legW, legH, 3*s); c2d.fill();
+  // shoes
+  c2d.fillStyle='#1a1a1a';
+  c2d.beginPath(); c2d.ellipse(x-legW*.5,     fY-1*s, legW*.65, 2.5*s, 0,0,Math.PI*2); c2d.fill();
+  c2d.beginPath(); c2d.ellipse(x+legW*.5+1*s, fY-1*s, legW*.65, 2.5*s, 0,0,Math.PI*2); c2d.fill();
+
+  // ── BODY ──
+  if (isWaldo) {
+    const ns=6, sh=bH/ns;
+    for (let i=0;i<ns;i++) {
+      c2d.fillStyle = i%2===0 ? '#E8192C' : '#FAFAFA';
+      if (i===0)      { c2d.beginPath(); c2d.roundRect(x-bW/2, shY+i*sh, bW, sh, [3*s,3*s,0,0]); c2d.fill(); }
+      else if (i===ns-1){ c2d.beginPath(); c2d.roundRect(x-bW/2, shY+i*sh, bW, sh, [0,0,3*s,3*s]); c2d.fill(); }
+      else            { c2d.fillRect(x-bW/2, shY+i*sh, bW, sh); }
+    }
+  } else {
+    c2d.fillStyle = p.shirtColor;
+    c2d.beginPath(); c2d.roundRect(x-bW/2, shY, bW, bH, 3*s); c2d.fill();
+    if (p.stripe) {
+      c2d.fillStyle = p.stripeCol;
+      c2d.fillRect(x-bW/2, shY+bH*.4, bW, bH*.18);
+    }
+  }
+
+  // ── ARMS ──
+  const ac = isWaldo ? '#E8192C' : p.shirtColor;
+  c2d.fillStyle = ac;
+  c2d.save();
+  c2d.translate(x-bW/2+1*s, shY+3*s); c2d.rotate(p.aL||-.12);
+  c2d.beginPath(); c2d.roundRect(-armW, 0, armW, armH, 2*s); c2d.fill();
+  c2d.fillStyle = p.skinTone;
+  c2d.beginPath(); c2d.arc(-armW/2, armH, armW*.7, 0, Math.PI*2); c2d.fill();
+  c2d.restore();
+  c2d.fillStyle = ac;
+  c2d.save();
+  c2d.translate(x+bW/2-1*s, shY+3*s); c2d.rotate(p.aR||.12);
+  c2d.beginPath(); c2d.roundRect(0, 0, armW, armH, 2*s); c2d.fill();
+  c2d.fillStyle = p.skinTone;
+  c2d.beginPath(); c2d.arc(armW/2, armH, armW*.7, 0, Math.PI*2); c2d.fill();
+  c2d.restore();
+
+  // ── HEAD ──
+  c2d.fillStyle = p.skinTone;
+  c2d.beginPath(); c2d.arc(x, hY, hR, 0, Math.PI*2); c2d.fill();
+
+  // ── HAIR (only on hatless chars) ──
+  if (!p.hat && !isWaldo) {
+    c2d.fillStyle = p.hairColor;
+    c2d.beginPath();
+    c2d.arc(x, hY, hR, Math.PI*.1, Math.PI*.9, true);
+    c2d.lineTo(x-hR, hY); c2d.closePath(); c2d.fill();
+  }
+
+  // ── EYES / GLASSES ──
+  const eY=hY+1.5*s, eR=3*s, eOff=4.5*s;
+  if (isWaldo || p.glasses) {
+    c2d.strokeStyle='#2a2a2a'; c2d.lineWidth=1.5*s;
+    c2d.fillStyle='rgba(180,224,255,.28)';
+    c2d.beginPath(); c2d.arc(x-eOff,eY,eR,0,Math.PI*2); c2d.fill(); c2d.stroke();
+    c2d.beginPath(); c2d.arc(x+eOff,eY,eR,0,Math.PI*2); c2d.fill(); c2d.stroke();
+    c2d.beginPath();
+    c2d.moveTo(x-eOff+eR,eY); c2d.lineTo(x+eOff-eR,eY);
+    c2d.moveTo(x-eOff-eR,eY); c2d.lineTo(x-eOff-eR-3*s,eY-1*s);
+    c2d.moveTo(x+eOff+eR,eY); c2d.lineTo(x+eOff+eR+3*s,eY-1*s);
+    c2d.stroke();
+  } else {
+    c2d.fillStyle='#2C1810';
+    c2d.beginPath(); c2d.arc(x-3.5*s,eY,1.2*s,0,Math.PI*2); c2d.fill();
+    c2d.beginPath(); c2d.arc(x+3.5*s,eY,1.2*s,0,Math.PI*2); c2d.fill();
+    c2d.strokeStyle='#a06040'; c2d.lineWidth=1*s;
+    c2d.beginPath(); c2d.arc(x, hY+4.5*s, 3*s, .1, Math.PI-.1); c2d.stroke();
+  }
+
+  // ── HAT ──
+  if (isWaldo) {
+    drawWaldoHat(c2d, x, hY, hR, s);
+  } else if (p.hat) {
+    drawSimpleHat(c2d, x, hY, hR, s, p.hatColor);
+  }
+
+  c2d.restore();
+}
+
+function drawWaldoHat(c2d, x, hY, hR, s) {
+  const brimY = hY-hR*.8;
+  const hH=16*s, hW=16*s, bW=21*s;
+  // brim
+  c2d.fillStyle='#E8192C';
+  c2d.beginPath(); c2d.ellipse(x,brimY,bW/2,3.5*s,0,0,Math.PI*2); c2d.fill();
+  // striped body
+  const top=brimY-hH, ns=5, sh=hH/ns;
+  for (let i=0;i<ns;i++) {
+    c2d.fillStyle = i%2===0 ? '#E8192C' : '#FAFAFA';
+    c2d.fillRect(x-hW/2, top+i*sh, hW, sh);
+  }
+  c2d.strokeStyle='rgba(0,0,0,.15)'; c2d.lineWidth=1;
+  c2d.strokeRect(x-hW/2, top, hW, hH);
+  // pompom
+  c2d.fillStyle='#FAFAFA';
+  c2d.beginPath(); c2d.arc(x, top-3*s, 4*s, 0, Math.PI*2); c2d.fill();
+}
+
+function drawSimpleHat(c2d, x, hY, hR, s, color) {
+  const brimY=hY-hR*.8, hH=12*s, hW=14*s, bW=20*s;
+  c2d.fillStyle=color;
+  c2d.beginPath(); c2d.ellipse(x,brimY,bW/2,3*s,0,0,Math.PI*2); c2d.fill();
+  c2d.beginPath(); c2d.roundRect(x-hW/2, brimY-hH, hW, hH, [2*s,2*s,0,0]); c2d.fill();
+}
+
+// ═══════════════════════════════════════════════
+// BACKGROUND
+// ═══════════════════════════════════════════════
+function drawBg() {
+  // sky
+  const sky=ctx.createLinearGradient(0,0,0,CH*.54);
+  sky.addColorStop(0,'#5CA8D9'); sky.addColorStop(1,'#BAE0F8');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,CW,CH*.54);
+
+  // clouds
+  const cloudData=[
+    [120,75,130],[380,45,95],[700,90,160],[1050,55,115],[1380,85,140],[1680,65,105]
+  ];
+  cloudData.forEach(([cx,cy,w]) => {
+    const h=w*.38;
+    ctx.fillStyle='rgba(255,255,255,.9)';
+    ctx.beginPath();
+    ctx.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2);
+    ctx.ellipse(cx-w*.23,cy+h*.12,w*.33,h*.55,0,0,Math.PI*2);
+    ctx.ellipse(cx+w*.23,cy+h*.12,w*.33,h*.55,0,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // distant hills
+  ctx.fillStyle='#6DB86B';
+  ctx.beginPath();
+  for (let i=0;i<9;i++) {
+    const hx=i*CW/8+80, hy=CH*.5;
+    const r=70+Math.sin(i*1.7)*25;
+    ctx.arc(hx,hy,r,Math.PI,0,false);
+  }
+  ctx.closePath(); ctx.fill();
+
+  // ground
+  const ground=ctx.createLinearGradient(0,CH*.52,0,CH);
+  ground.addColorStop(0,'#63B060'); ground.addColorStop(1,'#4A8B47');
+  ctx.fillStyle=ground; ctx.fillRect(0,CH*.52,CW,CH*.48);
+
+  // ground line highlight
+  ctx.fillStyle='rgba(255,255,255,.08)';
+  ctx.fillRect(0,CH*.52,CW,3);
+
+  // background trees
+  const treeXs=[60,210,370,540,730,940,1120,1310,1500,1690,1840];
+  treeXs.forEach((tx,i) => {
+    const ts=.45+(i%3)*.12, ty=CH*.53;
+    ctx.fillStyle='#4A7A3E';
+    ctx.beginPath(); ctx.arc(tx,ty-32*ts,28*ts,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#3D6533';
+    ctx.beginPath(); ctx.arc(tx,ty-46*ts,20*ts,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#6B4226';
+    ctx.fillRect(tx-4*ts, ty-10, 8*ts, 22);
+  });
+
+  // flags / pennants
+  const flagColors=['#E8192C','#1A56DB','#F5C518','#2ECC71','#9B59B6','#FF7043'];
+  for (let i=0;i<11;i++) {
+    const fx=90+i*175, fy=CH*.53;
+    ctx.strokeStyle='#999'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(fx,fy-55); ctx.stroke();
+    ctx.fillStyle=flagColors[i%flagColors.length];
+    ctx.beginPath();
+    ctx.moveTo(fx,fy-55); ctx.lineTo(fx+18,fy-48); ctx.lineTo(fx,fy-41);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // blankets on ground
+  const blanketCols=['#E8192C','#3498DB','#F39C12','#2ECC71','#9B59B6','#FF7043','#00BCD4'];
+  for (let i=0;i<9;i++) {
+    const bx=120+i*195, by=CH*.68+Math.sin(i*1.3)*28;
+    ctx.save();
+    ctx.translate(bx+40, by+20);
+    ctx.rotate(-.06+i*.015);
+    ctx.fillStyle=blanketCols[i%blanketCols.length];
+    ctx.fillRect(-40,-20,80,40);
+    ctx.strokeStyle='rgba(0,0,0,.12)'; ctx.lineWidth=1;
+    ctx.strokeRect(-40,-20,80,40);
+    // blanket stripe
+    ctx.fillStyle='rgba(255,255,255,.25)';
+    ctx.fillRect(-40,-3,80,6);
+    ctx.restore();
+  }
+
+  // stalls / tents in background
+  const tentCols=['#E8192C','#1A56DB','#F5C518'];
+  [[200,CH*.56],[700,CH*.55],[1300,CH*.57],[1750,CH*.56]].forEach(([tx,ty],i) => {
+    ctx.fillStyle=tentCols[i%tentCols.length];
+    ctx.beginPath();
+    ctx.moveTo(tx-50,ty); ctx.lineTo(tx,ty-45); ctx.lineTo(tx+50,ty);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.15)';
+    ctx.fillRect(tx-50,ty,100,30);
+    ctx.strokeStyle='rgba(0,0,0,.2)'; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(tx-50,ty); ctx.lineTo(tx,ty-45); ctx.lineTo(tx+50,ty);
+    ctx.stroke();
+  });
+}
+
+// ═══════════════════════════════════════════════
+// LEVEL GENERATION
+// ═══════════════════════════════════════════════
+function generateLevel(lv) {
+  chars = [];
+  const n   = 55 + lv * 22;
+  const gY  = CH * .68;
+  const mar = 70;
+
+  // Place Waldo at a random position
+  const wx = mar + rand()*(CW-mar*2);
+  const wd = .15 + rand()*.55;
+  const wy = gY - wd*120;
+  const ws = .78 + (1-wd)*.38;
+
+  waldo = {
+    x:wx, y:wy, scale:ws, isWaldo:true,
+    skinTone:'#FFDBB4', hairColor:'#5C3317',
+    shirtColor:'#E8192C', pantsColor:'#1A56DB',
+    hat:true, glasses:true,
+    aL:-.15, aR:.15, stripe:false,
+  };
+
+  for (let i=0;i<n;i++) {
+    const x  = mar + rand()*(CW-mar*2);
+    const dep = rand();
+    const y  = gY - dep*120 + (rand()-.5)*18;
+    const sc = .58 + (1-dep)*.48;
+
+    // Don't dress crowd members in red+white stripes
+    let shirt = pick(SHIRTS);
+    while (shirt === '#EF5350' || shirt === '#E74C3C') shirt = pick(SHIRTS);
+
+    chars.push({
+      x, y, scale:sc, isWaldo:false,
+      skinTone:  pick(SKIN),
+      hairColor: pick(HAIR),
+      shirtColor: shirt,
+      pantsColor: pick(PANTS),
+      hat:    rand()>.5,
+      hatColor: pick(HATCOL),
+      glasses: rand()>.87,
+      stripe:  rand()>.65,
+      stripeCol: `rgba(255,255,255,${.15+rand()*.3})`,
+      aL: (rand()-.5)*.55,
+      aR: (rand()-.5)*.55,
+    });
+  }
+
+  chars.push(waldo);
+  // painters z-order
+  chars.sort((a,b) => a.y - b.y);
+}
+
+// ═══════════════════════════════════════════════
+// HIT TEST
+// ═══════════════════════════════════════════════
+function hitTest(cx, cy) {
+  if (!waldo) return false;
+  const {x,y,scale:s} = waldo;
+  const hw=22*s, hh=88*s;
+  return cx>=x-hw && cx<=x+hw && cy>=y-hh && cy<=y+4*s;
+}
+
+// ═══════════════════════════════════════════════
+// RIPPLES
+// ═══════════════════════════════════════════════
+function addRipple(x,y,hit) {
+  ripples.push({x,y,r:5,maxR:hit?75:38,alpha:1,hit});
+}
+function tickRipples() {
+  ripples = ripples.filter(r=>r.alpha>.02);
+  ripples.forEach(r=>{
+    r.r += 2;
+    if (r.r > r.maxR) r.alpha -= .07;
+  });
+}
+function drawRipples() {
+  ripples.forEach(r=>{
+    ctx.save();
+    ctx.globalAlpha = r.alpha;
+    ctx.strokeStyle = r.hit ? '#2ECC71' : '#E8192C';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(r.x,r.y,r.r,0,Math.PI*2); ctx.stroke();
+    if (r.hit) {
+      ctx.beginPath(); ctx.arc(r.x,r.y,r.r*.55,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  });
+}
+
+// ═══════════════════════════════════════════════
+// CONFETTI
+// ═══════════════════════════════════════════════
+function launchConfetti(ox,oy) {
+  const colors=['#E8192C','#1A56DB','#F5C518','#2ECC71','#FAFAFA','#FF69B4','#FFA500','#7B68EE'];
+  for (let i=0;i<140;i++) {
+    const a=rand()*Math.PI*2, sp=4+rand()*11;
+    confetti.push({
+      x:ox, y:oy,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-7,
+      col:pick(colors), sz:4+rand()*7,
+      rot:rand()*Math.PI*2, rv:(rand()-.5)*.28,
+      alpha:1, rect:rand()>.4,
+    });
+  }
+}
+function tickConfetti() {
+  confetti = confetti.filter(p=>p.alpha>.02);
+  confetti.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy;
+    p.vy+=.3; p.vx*=.985;
+    p.rot+=p.rv; p.alpha-=.014;
+  });
+}
+function drawConfetti() {
+  confetti.forEach(p=>{
+    ctx.save();
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.col;
+    ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+    p.rect ? ctx.fillRect(-p.sz/2,-p.sz/4,p.sz,p.sz/2)
+           : (ctx.beginPath(), ctx.arc(0,0,p.sz/2,0,Math.PI*2), ctx.fill());
+    ctx.restore();
+  });
+}
+
+// ═══════════════════════════════════════════════
+// HINT (drawn on canvas)
+// ═══════════════════════════════════════════════
+function triggerHint() {
+  if (!waldo || S.found) return;
+  document.getElementById('hint-btn').classList.add('hidden');
+  hintAlpha = 1; hintPulse = 0;
+  // scroll game area to waldo
+  const ga = document.getElementById('game-area');
+  const displayW = canvas.clientWidth;
+  const ratio = displayW / CW;
+  ga.scrollLeft = waldo.x * ratio - window.innerWidth/2;
+}
+function tickHint() {
+  if (hintAlpha<=0) return;
+  hintPulse+=.09;
+  if (hintPulse>20) hintAlpha -= .025;
+}
+function drawHint() {
+  if (hintAlpha<=0 || !waldo) return;
+  const pulse = 48 + Math.sin(hintPulse)*14;
+  ctx.save();
+  ctx.globalAlpha = hintAlpha * (.55+.45*Math.abs(Math.sin(hintPulse)));
+  ctx.strokeStyle='#F5C518';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([9,5]);
+  ctx.beginPath();
+  ctx.arc(waldo.x, waldo.y-42*waldo.scale, pulse*waldo.scale, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════
+function loop() {
+  ctx.clearRect(0,0,CW,CH);
+  drawBg();
+  chars.forEach(c => drawChar(ctx, c));
+  tickRipples(); drawRipples();
+  tickHint();    drawHint();
+  tickConfetti();drawConfetti();
+  raf = requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════
+// TIMER
+// ═══════════════════════════════════════════════
+function startTimer() {
+  S.startMs = Date.now();
+  S.timerInt = setInterval(()=>{
+    const e = (Date.now()-S.startMs)/1000|0;
+    document.getElementById('timer').textContent =
+      String(Math.floor(e/60)).padStart(2,'0')+':'+String(e%60).padStart(2,'0');
+  }, 300);
+}
+function stopTimer() {
+  clearInterval(S.timerInt);
+  return (Date.now()-S.startMs)/1000;
+}
+
+// ═══════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════
+function flashMiss(n) {
+  const el = document.getElementById('miss-indicator');
+  clearTimeout(S.missTimer);
+  el.textContent = `Miss ${n}`;
+  S.missTimer = setTimeout(()=>{ el.textContent=''; }, 900);
+}
+
+function showLevelBadge(lv) {
+  const badge = document.getElementById('level-badge');
+  document.getElementById('badge-num').textContent = lv;
+  badge.classList.add('show');
+  setTimeout(()=> badge.classList.remove('show'), 2000);
+}
+
+function showSuccess(t) {
+  const isLast = S.level >= 3;
+  document.getElementById('ov-title').innerHTML =
+    isLast ? 'All found! <em>You win!</em>' : 'You found <em>Waldo!</em>';
+  document.getElementById('ov-sub').textContent = `Level ${S.level} complete`;
+  document.getElementById('ov-time').textContent = t.toFixed(1);
+  document.getElementById('ov-clicks').textContent = S.clicks;
+  document.getElementById('ov-next').textContent = isLast ? 'Play Again' : 'Next Level →';
+  document.getElementById('success-overlay').classList.remove('hidden');
+}
+
+function startLevel(lv) {
+  S.level=lv; S.found=false; S.clicks=0;
+  hintAlpha=0; hintPulse=0;
+  ripples=[]; confetti=[];
+
+  document.getElementById('success-overlay').classList.add('hidden');
+  document.getElementById('hint-btn').classList.add('hidden');
+  document.getElementById('miss-indicator').textContent='';
+  document.getElementById('level-val').textContent=`${lv} / 3`;
+  document.getElementById('timer').textContent='00:00';
+
+  generateLevel(lv);
+  clearInterval(S.timerInt);
+  startTimer();
+  showLevelBadge(lv);
+
+  // hint unlocks after 30 s
+  setTimeout(()=>{ if(!S.found) document.getElementById('hint-btn').classList.remove('hidden'); }, 30000);
+}
+
+// ═══════════════════════════════════════════════
+// CLICK HANDLER
+// ═══════════════════════════════════════════════
+canvas.addEventListener('click', e => {
+  if (S.found) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left)  * (CW / rect.width);
+  const cy = (e.clientY - rect.top)   * (CH / rect.height);
+
+  S.clicks++;
+
+  if (hitTest(cx, cy)) {
+    S.found = true;
+    const t = stopTimer();
+    addRipple(cx, cy, true);
+    launchConfetti(waldo.x, waldo.y-42*waldo.scale);
+    setTimeout(()=> showSuccess(t), 650);
+  } else {
+    addRipple(cx, cy, false);
+    flashMiss(S.clicks);
+  }
+});
+
+// ═══════════════════════════════════════════════
+// BUTTON WIRING
+// ═══════════════════════════════════════════════
+document.getElementById('ov-next').addEventListener('click',    ()=> startLevel(S.level>=3 ? 1 : S.level+1));
+document.getElementById('ov-restart').addEventListener('click', ()=> startLevel(1));
+document.getElementById('restart-btn').addEventListener('click',()=> startLevel(1));
+document.getElementById('hint-btn').addEventListener('click',   ()=> triggerHint());
+
+// ═══════════════════════════════════════════════
+// START SCREEN — draw Waldo preview
+// ═══════════════════════════════════════════════
+(function drawPreview() {
+  const pc = document.getElementById('preview-canvas');
+  const p2 = pc.getContext('2d');
+  // transparent bg
+  p2.clearRect(0,0,100,130);
+  drawChar(p2, {
+    x:50, y:124, scale:1.55, isWaldo:true,
+    skinTone:'#FFDBB4', hairColor:'#5C3317',
+    shirtColor:'#E8192C', pantsColor:'#1A56DB',
+    hat:true, glasses:true,
+    aL:-.15, aR:.15, stripe:false,
+  });
+})();
+
+document.getElementById('start-btn').addEventListener('click', ()=>{
+  document.getElementById('start-screen').classList.add('hidden');
+  startLevel(1);
+  loop();
+});
+</script>
+</body>
+</html>
